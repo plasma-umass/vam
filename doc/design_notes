@@ -1,0 +1,60 @@
+Vam Design Notes
+
+This is a reimplementation of the Vam allocator published in the MSP 2005
+paper. The key components of the design include size segregation, header
+elimination, address partitioning and page orientation.
+
+(1) Size Segregation
+
+Vam tries to segregate objects of popular sizes into their dedicated subheaps.
+Objects have to reach some allocation threshold to become popular to avoid
+wasting space. Unpopular and large objects are allocated in a common subheap.
+
+(2) Header Elimination
+
+Because popular objects have dedicated subheaps, Vam could eliminate their
+individual headers and store the metadata in a common header at the base of
+each subheap. All other (unpopular or large) objects still have individual
+headers. Since headers contain information needed by the allocator when
+freeing the objects, Vam needs to quickly find the metadata of any object given
+the object address. This is achieved by address partitioning and pointer
+arithmetic.
+
+(3) Address Partitioning
+
+Vam partitions the entire address space into areas of a fixed size (a power of
+two, e.g. 16 MB). Each area is associated with a type when allocated and Vam
+uses a small table to map object addresses to the types. Areas of type 0 are
+used to allocate objects with headers. Note that extremely large objects
+(larger than a single partition) could span multiple partitions.
+
+Areas of type n (n > 0) are used for those dedicated subheaps of size
+2^(n-1) * PAGE_SIZE. Because all dedicated subheaps are powers of two in size
+and are aligned at their size boundaries, Vam can locate the subheap base which
+contains the object metadata by doing arithmetic on the object address with the
+partition type information.
+
+(4) Page Orientation
+
+Vam manages the heap in a page-oriented way. It creates subheaps which are
+multiple pages in size and aligned. In fact, the dedicated subheaps for each
+popular size are created in exponentially increasing sizes: the first subheap
+is 1 page, the second one is 2 pages, then the third one is 4 pages and so on,
+with a maximum size. This has an effect of reducing the average metadata
+overhead for the really popular sizes.
+
+Because of this page-oriented heap organization, Vam can easily distinguish
+those free pages from the used ones, and can therefore discards free pages
+under memory pressure.
+
+(5) Freelist vs. Bitmap Allocation
+
+The allocation and deallocation efficiency for the most popular objects is
+important for achieving high performance. There are two alternatives for the
+dedicated subheap implementation: the freelist-based one and the bitmap-based
+one. The freelist-based implementation is generally faster because the bitmap
+operations are quite slow. However, the bitmap-based implementation does not
+use the freed objects and is therefore more robust to stand user application
+errors. The bitmaps can also easily support things like address-ordered
+allocation and clustered allocation. Other features such as pointer-bumping
+allocation and free object caching are common to both implementations.
